@@ -29,7 +29,7 @@ export const GAME_CONFIG = {
 	TOTAL_SECONDS: 100,
 	/** 이 진행도(%) 이상이면 “완료”로 센다 */
 	WIN_PROGRESS: 100,
-	/** 완료 인원이 이 수 이상이면 승리 */
+	/** 트로피(100%) 인원이 이 수 이상이면 CLEAR(시간 종료 시 또는 전원 운명 확정 시) */
 	WIN_STUDENT_COUNT: 3,
 	/** 집중 0으로 실패한 학생이 이 수 이상이면 패배 */
 	LOSE_FAIL_COUNT: 3,
@@ -92,7 +92,12 @@ export class CafeGame {
 		if (this.phase !== 'playing') return;
 
 		this.elapsed += dt;
+
+		const timeBefore = this.remainingSeconds;
 		this.remainingSeconds = Math.max(0, this.remainingSeconds - dt);
+		/** 남은 제한 시간이 닿을 때까지만 학생 시뮬(진행도·집중) — 0 이후에는 진행이 더 올라가 승리가 비는 일 방지 */
+		const simDt = timeBefore > 0 ? Math.min(dt, timeBefore) : 0;
+
 		const wasWindowOpen = this.windowSecondsLeft > 0;
 		if (this.windowSecondsLeft > 0) {
 			this.windowSecondsLeft = Math.max(0, this.windowSecondsLeft - dt);
@@ -113,7 +118,7 @@ export class CafeGame {
 			}
 		}
 		for (const s of this.students) {
-			s.tick(dt, this.noiseLevel, windowOpen);
+			s.tick(simDt, this.noiseLevel, windowOpen);
 		}
 
 		for (let i = this.popups.length - 1; i >= 0; i--) {
@@ -126,26 +131,49 @@ export class CafeGame {
 		this._resolveEnd();
 	}
 
-	/** 승리 / 패배 조건을 한곳에서만 검사 */
+	/**
+	 * 승·패 (한 판에 한 번만 확정)
+	 *
+	 * - 기본은 **남은 시간이 0**(100초 경과)까지 플레이.
+	 * - **전원 운명이 확정된 순간**(각 학생이 트로피(100%) 또는 집중 0 실패 중 하나)이면, 그 즉시 판정:
+	 *   트로피 `WIN_STUDENT_COUNT`명 이상이면 CLEAR, 아니면 GAME OVER. (예: 3 트로피 + 2 실패 → 즉시 CLEAR)
+	 * - 집중 0 실패가 `LOSE_FAIL_COUNT`명 이상이면 즉시 GAME OVER(전원 확정 전에도).
+	 * - 시간이 먼저 0이 되면: 트로피 인원으로 위와 동일하게 CLEAR / GAME OVER.
+	 */
 	_resolveEnd() {
-		const completed = this.students.filter(
-			(s) => !s.failed && s.progress >= GAME_CONFIG.WIN_PROGRESS
-		).length;
+		const completed = this.students.filter((s) => s.hasClearedGoal()).length;
 		const failed = this.students.filter((s) => s.failed).length;
+		const need = GAME_CONFIG.WIN_STUDENT_COUNT;
+		const timeUp = this.remainingSeconds <= 0;
+		const allFatesDecided = this.students.every((s) => s.hasClearedGoal() || s.failed);
 
-		if (completed >= GAME_CONFIG.WIN_STUDENT_COUNT) {
+		if (failed >= GAME_CONFIG.LOSE_FAIL_COUNT) {
+			this.phase = 'lost';
+			return;
+		}
+
+		if (allFatesDecided) {
+			if (completed >= need) {
+				if (this.winDurationSec === null) {
+					this.winDurationSec = this.elapsed;
+				}
+				this.phase = 'won';
+			} else {
+				this.phase = 'lost';
+			}
+			return;
+		}
+
+		if (timeUp) {
+			if (completed < need) {
+				this.phase = 'lost';
+				return;
+			}
 			if (this.winDurationSec === null) {
 				this.winDurationSec = this.elapsed;
 			}
 			this.phase = 'won';
 			return;
-		}
-		if (failed >= GAME_CONFIG.LOSE_FAIL_COUNT) {
-			this.phase = 'lost';
-			return;
-		}
-		if (this.remainingSeconds <= 0 && completed < GAME_CONFIG.WIN_STUDENT_COUNT) {
-			this.phase = 'lost';
 		}
 	}
 
@@ -284,7 +312,7 @@ export class CafeGame {
 	}
 
 	getCompletedCount() {
-		return this.students.filter((s) => !s.failed && s.progress >= GAME_CONFIG.WIN_PROGRESS).length;
+		return this.students.filter((s) => s.hasClearedGoal()).length;
 	}
 
 	getFailedCount() {

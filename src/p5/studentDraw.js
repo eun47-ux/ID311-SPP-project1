@@ -231,7 +231,8 @@ function drawChunkBar(p, bx, by, bw, bh, ratio, fillRgb) {
 	const segW = bw / segments;
 	p.fill(...PALETTE.barTrack);
 	p.rect(bx, by, bw, bh);
-	const filled = Math.round(ratio * segments);
+	// Math.round면 95%도 10칸이 채워져 100%처럼 보일 수 있음 → floor로 표시만 보수적으로
+	const filled = Math.min(segments, Math.floor(ratio * segments + 1e-9));
 	p.fill(...fillRgb);
 	for (let i = 0; i < filled; i++) {
 		p.rect(bx + i * segW + 1, by + 1, segW - 2, bh - 2);

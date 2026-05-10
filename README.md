@@ -7,7 +7,7 @@ Email : wldms47@kaist.ac.kr
 
 
 ## 2. Source Code Repository
-
+https://github.com/eun47-ux/ID311-SPP-project1
 
 
 
@@ -52,11 +52,13 @@ Because of these different reactions, the player’s role is not to optimize for
 
 ### Win / Lose Conditions
 
-The player **wins** if **at least three** students reach **100%** study progress (`progress`) before the round timer hits zero. Each round lasts **100 seconds** (`GAME_CONFIG.TOTAL_SECONDS` in `src/lib/cafeGame.js`). Win thresholds use `WIN_STUDENT_COUNT` and `WIN_PROGRESS`. Student progress gain is scaled for the round length (see `MATCH_LENGTH_SEC` / `PROGRESS_BASE_PER_SEC` in `src/lib/students.js`).
+The round runs up to the full **100 seconds** (`GAME_CONFIG.TOTAL_SECONDS` in `src/lib/cafeGame.js`), **unless** the outcome is already fully determined earlier.
 
-The player **loses** if:
-- too many students burn out (focus hits zero), or
-- the timer reaches zero before three students reach 100% progress
+- **Everyone’s fate is fixed** = each student is either at **100%** (trophy) or **failed** (focus hit zero). As soon as that is true for all five, the round **ends immediately**: **CLEAR** if at least **three** are at 100%, otherwise **GAME OVER**. (Example: at ~90s, three trophies and two failures → **CLEAR** right away.)
+- **Before** that “all decided” moment: **GAME OVER** immediately if at least **three** students have failed (`LOSE_FAIL_COUNT`).
+- **When** time reaches zero without an early exit: same rule as “all decided” using current counts — at least **three** at 100% → **CLEAR**, else **GAME OVER**.
+
+Student progress gain is scaled for the round length (see `MATCH_LENGTH_SEC` / `PROGRESS_BASE_PER_SEC` in `src/lib/students.js`).
 
 
 ## 5. 코드 구조 (정리 기준)

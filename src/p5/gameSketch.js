@@ -14,6 +14,11 @@ const HUD_H = TILE * 2;
 const W = COLS * TILE;
 const H = ROWS * TILE + HUD_H;
 
+/** 탭 전환·디버거 정지 후 deltaTime 폭주 시 한 프레임에 과제·타이머가 점프하지 않도록 상한(초) */
+const MAX_TICK_SEC = 0.25;
+/** 승패 확정 후 말풍선·아이콘 최종 상태를 볼 시간(ms) — 이후 요약 오버레이 */
+const END_SUMMARY_DELAY_MS = 1500;
+
 // 플레이어 상태
 let playerX = TILE * 10;
 let playerY = TILE * 10;
@@ -83,6 +88,8 @@ export function mountP5Game(host) {
 	let feedbackUntil = 0;
 	let usePressStartFont = false;
 	let musicalNotes = [];
+	/** 0이면 대기 없음. 승패 직후 `p.millis()` 기준으로 요약 화면 전환 시각 */
+	let endPauseDeadlineMs = 0;
 
 	const preventScroll = (e) => {
 		if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.code) > -1) {
@@ -119,7 +126,7 @@ export function mountP5Game(host) {
 			drawHudBar(p, W);
 
 			if (uiScreen === 'play' && game) {
-				const dt = p.deltaTime / 1000;
+				const dt = Math.min(p.deltaTime / 1000, MAX_TICK_SEC);
 				if (game.phase === 'playing') {
 					game.tick(dt);
 					
@@ -184,13 +191,19 @@ export function mountP5Game(host) {
 					}
 				}
 				if (game.phase !== 'playing') {
-					endMessage = game.summary.getReflectionMessage({
-						completed: game.getCompletedCount(),
-						total: game.students.length,
-						goalStudentCount: GAME_CONFIG.WIN_STUDENT_COUNT,
-						winSec: game.phase === 'won' ? game.winDurationSec : null,
-					});
-					uiScreen = 'end';
+					if (endPauseDeadlineMs === 0) {
+						endPauseDeadlineMs = p.millis() + END_SUMMARY_DELAY_MS;
+					}
+					if (p.millis() >= endPauseDeadlineMs) {
+						endMessage = game.summary.getReflectionMessage({
+							completed: game.getCompletedCount(),
+							total: game.students.length,
+							goalStudentCount: GAME_CONFIG.WIN_STUDENT_COUNT,
+							winSec: game.phase === 'won' ? game.winDurationSec : null,
+						});
+						uiScreen = 'end';
+						endPauseDeadlineMs = 0;
+					}
 				}
 			}
 
@@ -302,6 +315,7 @@ export function mountP5Game(host) {
 			game = new CafeGame();
 			uiScreen = 'play';
 			feedback = '';
+			endPauseDeadlineMs = 0;
 			playerX = TILE * 10;
 			playerY = TILE * 10;
 			musicalNotes = [];
