@@ -18,6 +18,7 @@ https://youtu.be/z8CvN1aGxNo
 
 
 ## 4. Game Description
+<img src="references/hero.png" alt="hero" width="400" />
 Cafe Focus Manager is a simulation game where the player acts as a cafe facilitator (manager).  
 Instead of directly controlling students, the player manages the cafe environment and gives small interventions to help students maintain focus and complete their study goals.
 
@@ -176,11 +177,10 @@ Making these systems feel understandable without becoming overwhelming required 
 - https://q5play.org/home/
 - Google Fonts — Press Start 2P : for the retro UI typography.
 - Reference images
-  - 
-배경 레퍼런스:
-![background ref](references/background.png) : generated with nanobanana2
-![character ref 1](references/character%20ref1.webp)
-![character ref 2](references/character%20ref2.jpg)
+  - 배경 레퍼런스 (generated with nanobanana2)  
+<img src="references/background.png" alt="background ref" width="400" />  
+<img src="references/character%20ref1.webp" alt="character ref 1" width="400" />
+<img src="references/character%20ref2.jpg" alt="character ref 2" width="400" />
 
 
 
