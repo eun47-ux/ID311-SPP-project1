@@ -12,6 +12,7 @@ https://github.com/eun47-ux/ID311-SPP-project1
 
 
 ## 3. Demo Video
+https://youtu.be/z8CvN1aGxNo
 
 
 
