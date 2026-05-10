@@ -62,57 +62,57 @@ The round runs up to the full **100 seconds** (`GAME_CONFIG.TOTAL_SECONDS` in `s
 Student progress gain is scaled for the round length (see `MATCH_LENGTH_SEC` / `PROGRESS_BASE_PER_SEC` in `src/lib/students.js`).
 
 
-## 5. 코드 구조 (정리 기준)
+## 5. organization of your code.
 
-폴더를 **규칙(lib)** 과 **그리기(p5)** 로 나눴다. 수업에서 말한 것처럼 “데이터랑 규칙은 한쪽, 화면은 한쪽”에 두면 나중에 고치기 편하다.
+The project separates game rules (`lib`) and rendering (`p5`).  
+Following the course structure, gameplay logic and data are kept separate from visual drawing code to make the project easier to organize and modify later.
 
-```
+
 src/
   lib/
-    cafeGame.js    — 한 판 전체: 타이머, 승패, 소음/창문/Remind, 팝업
-    students.js    — Student 클래스 + Factory/Builder + 자리 상수 STUDENT_TILES
-    summary.js      — 개입 횟수 집계 + 엔드 한 줄 메시지
+    cafeGame.js      — game rules, timer, win/lose, actions
+    students.js      — Student class and Factory
+    summary.js       — intervention tracking and reflection
 
   p5/
-    gameSketch.js   — p5 인스턴스: 타이틀/플레이/엔드, 입력, 거리 체크
-    palette.js      — 색, TILE, 그리드
-    cafeWorldDraw.js — 바닥·벽·테이블
-    cafeHudDraw.js   — 상단 HUD
-    studentDraw.js   — 학생/플레이어 스프라이트, 맞춤 히트박스
+    gameSketch.js    — p5 instance, scenes, input handling
+    palette.js       — colors and grid settings
+    cafeWorldDraw.js — cafe environment drawing
+    cafeHudDraw.js   — HUD rendering
+    studentDraw.js   — student and player sprites
 
   App.svelte
   main.js
-```
 
-### 수업 내용이랑 연결해서 쓴 부분 (직접 짚을 때)
 
-- **class / 객체**  
-  - `Student`: 한 명의 상태(`focus`, `progress`, …)와 메서드(`tick`, `applyRemindFocusDelta` 등)를 묶은 인스턴스.  
-  - `CafeGame`, `SessionSummary`: 한 판 세션·통계를 각각 클래스로 둠.  
-  - `gameSketch` 안에서 `new CafeGame()`, `new p5(...)` 처럼 **생성자**로 붙이는 것도 같은 맥락.
 
-- **if / 조건**  
-  - `Student.tick`: `if (this.failed)`, `if (this.focus > 28)` 같이 **가드 + 분기**.  
-  - `CafeGame`: 페이즈·쿨다운·창문 열림 여부 등 **여러 if**로 규칙 분기.  
-  - `getFocusDecayPerSecond` 등에서 `noiseMap` **객체**를 키로 조회하고 `windowOpen`이면 배율 곱하는 식으로 수업 예제의 “상태에 따라 다르게”와 비슷하게 씀.
+### Main Classes and Objects
 
-- **Factory + Builder + Singleton** (`ref/inclass tutorial.md` 의 ComputerFactory 예제랑 같은 뼈대)  
-  - `StudentFactory.getFactory()`: **싱글톤** — 인스턴스 하나만 쓰게 static으로 막음.  
-  - `StudentBuilder`: `setKind` → `setMultipliers` → `setReactions` → `build()` **체이닝**으로 `Student`를 조립.  
-  - `makeSensitive`, `makeFast`, …: 프리셋 페르소나.  
-  - `createRoster(n)`: 위 다섯 종을 **배열로 섞은 순서**에 맞춰 `n`명 생성 (한 판에 같은 페르소나 중복 없음, `n`이 5 넘으면 순환).  
-  - 바깥에서는 **`new Student()`를 직접 부르지 않고** 팩토리만 거치게 해 둠.
+The project is mainly structured around object-oriented classes.
 
-- **자리 vs 페르소나**  
-  - **자리**: `STUDENT_TILES` (타일 col/row) — `studentDraw`의 `slotToPixel`과 짝.  
-  - **페르소나**: `Student`의 `kind` / `kindLabel` + 델타·배율 필드 — 전부 `StudentFactory` + `StudentBuilder`가 채움.
+- `Student` stores each student’s state such as:
+  - `focus`
+  - `progress`
+  - `persona`
+  - `failed`
 
-예전에 실험용으로 두었던 `studentPersona.js` / `rollPersona` 는 **실제 게임 경로에서 import 되지 않아서** 과제 제출용 코드 정리 때 제거했다. 지금 페르소나는 전부 `students.js` 안 프리셋으로만 간다.
+  It also contains methods like:
+  - `tick()`
+  - `applyRemindFocusDelta()`
+  - `applyWindowBoost()`
 
-### 모듈이 서로 만나는 방식
+- `CafeGame` : manages one full game session, including:
+  - timer
+  - player actions
+  - win / lose conditions
+  - environment states
 
-`lib/` 는 p5를 import 하지 않는다. `p5/gameSketch.js` 가 `CafeGame`을 만들고 `tick` / `remindStudent` 같은 메서드만 호출하고, 그리기는 `studentDraw`, `cafeWorldDraw` 등이 `game`과 `students`를 **읽기만** 한다. Svelte 쪽은 캔버스를 붙일 DOM만 넘긴다.
+- `SessionSummary` : records player interventions and generates reflection messages at the end of the game.
 
+
+- Factory Pattern
+The project uses a Factory pattern for student creation.
+Instead of creating students manually throughout the code, all students are generated through:
 
 
 
