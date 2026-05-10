@@ -101,6 +101,7 @@ export class CafeGame {
 
 		if (wasWindowOpen && !windowOpen) {
 			for (const s of this.students) {
+				if (s.hasClearedGoal()) continue;
 				const d = s.applyWindowCloseDelta();
 				if (d > 0) {
 					this.addPopup(s.id, `+${d} Closed`, [140, 200, 160]);
@@ -164,6 +165,7 @@ export class CafeGame {
 
 		const student = this.students.find((s) => s.id === studentId);
 		if (!student || student.failed) return { ok: false, reason: '대상 없음' };
+		if (student.hasClearedGoal()) return { ok: false };
 
 		const idx = Math.min(student.remindCount, GAME_CONFIG.REMIND_FOCUS_BONUSES.length - 1);
 		const baseBonus = GAME_CONFIG.REMIND_FOCUS_BONUSES[idx];
@@ -207,6 +209,7 @@ export class CafeGame {
 		this.summary.recordNoiseChange();
 
 		for (const s of this.students) {
+			if (s.hasClearedGoal()) continue;
 			let d = 0;
 			if (loudening) {
 				d = s.applyNoiseEnvironmentPulse('louder');
@@ -241,6 +244,7 @@ export class CafeGame {
 		if (this.windowSecondsLeft > 0) return;
 
 		for (const s of this.students) {
+			if (s.hasClearedGoal()) continue;
 			const delta = s.applyWindowOpenDelta();
 			if (delta > 0) {
 				this.addPopup(s.id, `+${delta} Fresh`, [100, 180, 220]);

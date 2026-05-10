@@ -26,6 +26,8 @@ export const STUDENT_TILES = [
 
 const MATCH_LENGTH_SEC = 100;
 const PROGRESS_BASE_PER_SEC = 1.2 * (120 / MATCH_LENGTH_SEC);
+/** 목표 진행도(%). `cafeGame.js` 의 `GAME_CONFIG.WIN_PROGRESS` 와 같게 유지 */
+const GOAL_PROGRESS = 100;
 
 // ═══════════════════════════════════════════════════════════════
 // 2) Student — 인스턴스 = 객체(object). 메서드로 행동 캡슐화(class)
@@ -71,9 +73,15 @@ export class Student {
 		this.recentRemindTimes = [];
 	}
 
+	/** 과제 100% 달성 후 — 게임 끝날 때까지 집중·진행도 틱/개입 없음 (트로피 유지) */
+	hasClearedGoal() {
+		return !this.failed && this.progress >= GOAL_PROGRESS;
+	}
+
 	/** @param {number} dt 초 */
 	tick(dt, noiseLevel, windowOpen) {
 		if (this.failed) return;
+		if (this.hasClearedGoal()) return;
 
 		const decay = this.getFocusDecayPerSecond(noiseLevel, windowOpen) * dt;
 		this.focus = Math.max(0, this.focus - decay);
@@ -114,6 +122,7 @@ export class Student {
 	 */
 	applyRemindFocusDelta(baseBonus, nowSec, burst) {
 		if (this.failed) return 0;
+		if (this.hasClearedGoal()) return 0;
 
 		const { windowSec, minCount } = burst;
 		this.recentRemindTimes = this.recentRemindTimes.filter((t) => nowSec - t <= windowSec);
@@ -131,18 +140,21 @@ export class Student {
 
 	applyWindowOpenDelta() {
 		if (this.failed) return 0;
+		if (this.hasClearedGoal()) return 0;
 		this.focus = Math.max(0, Math.min(100, this.focus + this.windowOpenDelta));
 		return this.windowOpenDelta;
 	}
 
 	applyWindowCloseDelta() {
 		if (this.failed) return 0;
+		if (this.hasClearedGoal()) return 0;
 		this.focus = Math.max(0, Math.min(100, this.focus + this.windowCloseDelta));
 		return this.windowCloseDelta;
 	}
 
 	applyNoiseEnvironmentPulse(type) {
 		if (this.failed) return 0;
+		if (this.hasClearedGoal()) return 0;
 		const delta = type === 'louder' ? this.noisePulseLouder : this.noisePulseQuieter;
 		this.focus = Math.max(0, Math.min(100, this.focus + delta));
 		return delta;
