@@ -29,6 +29,10 @@ export const PALETTE = {
 	shirt4: [220, 140, 60],  // Orange
 	outline: [42, 38, 34],
 	titleAccent: [110, 150, 100],
+	/** 플레이어 머리 위 ▼ 마커 (studentDraw.js drawPlayerAvatar) */
+	playerMarker: [255, 210, 48],
+	/** 화면 하단 Get closer 등 안내 문구 (gameSketch.js feedback) — 밝은 바닥 위 대비용 짙은 갈색 */
+	feedbackHint: [78, 48, 34],
 };
 
 export const TILE = 16;

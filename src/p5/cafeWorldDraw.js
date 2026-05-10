@@ -97,7 +97,7 @@ export function drawTables(p) {
 	p.rect(baseX + TILE * 1, baseY - TILE * 0.5, TILE * 1.5, TILE * 1);
 	p.rect(baseX + TILE * 4, baseY - TILE * 0.5, TILE * 1.2, TILE * 0.8);
 
-	// 좌측 하단 대형 스피커 (소음 조절용)
+	// 좌측 하단 대형 스피커 (M 음악)
 	const sx = TILE * 1;
 	const sy = (ROWS - 4) * TILE;
 	p.fill(40, 40, 40);

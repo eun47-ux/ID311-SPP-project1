@@ -1,5 +1,5 @@
 /**
- * 한 판 동안의 개입 기록 + 종료 시 reflection 문구 (표시 전용, 게임 규칙 없음)
+ * Per-run intervention counts + short end-of-run reflection line (display only).
  */
 
 export class SessionSummary {
@@ -21,27 +21,32 @@ export class SessionSummary {
 		this.windowOpenCount += 1;
 	}
 
-	/** @param {{ completed: number, total: number }} end */
+	/**
+	 * @param {{ completed: number, total: number, goalStudentCount: number, winSec?: number|null }} end
+	 */
 	getReflectionMessage(end) {
-		const { completed, total } = end;
+		const { completed, total, goalStudentCount, winSec } = end;
 		const totalActions =
 			this.directRemindCount + this.noiseChangeCount + this.windowOpenCount;
 
-		if (completed >= 3 && this.noiseChangeCount >= this.directRemindCount) {
-			return '전체 분위기를 차분하게 맞추는 데 신경 썼어요.';
+		let msg;
+		if (completed >= goalStudentCount && this.noiseChangeCount >= this.directRemindCount) {
+			msg = 'You leaned on calmer room tone (music) often.';
+		} else if (this.directRemindCount >= 6) {
+			msg = 'You checked in on students directly, a lot.';
+		} else if (this.windowOpenCount >= 3) {
+			msg = 'You reset the space with fresh air often.';
+		} else if (completed === total) {
+			msg = 'Everyone neared the goal. Balanced facilitation.';
+		} else if (totalActions <= 4) {
+			msg = 'Few moves—timing probably mattered most.';
+		} else {
+			msg = 'You mixed environment tweaks with nudges this run.';
 		}
-		if (this.directRemindCount >= 6) {
-			return '어려워 보이는 학생에게 자주 손을 뻗었어요.';
+
+		if (winSec != null && Number.isFinite(winSec)) {
+			msg = `${msg}\nClear time: ${winSec.toFixed(1)}s`;
 		}
-		if (this.windowOpenCount >= 3) {
-			return '환기(창문)로 공간을 자주 리셋했어요.';
-		}
-		if (completed === total) {
-			return '모든 학생이 목표에 가까이 갔어요. 균형 잡힌 퍼실리테이션이에요.';
-		}
-		if (totalActions <= 4) {
-			return '개입은 적었지만, 타이밍이 중요했을 거예요.';
-		}
-		return '환경 조절과 개별 지원을 섞어서 써 본 한 판이에요.';
+		return msg;
 	}
 }

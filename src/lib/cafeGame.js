@@ -1,53 +1,116 @@
 /**
- * 한 판 카페 시뮬: 타이머, 소음·창문, 플레이어(퍼실리테이터) 액션, 승패
+ * @file cafeGame.js
+ * @description 한 판(CafeGame)의 규칙만 담당한다. p5/Svelte는 여기를 호출만 하고 그리지 않는다.
+ *
+ * ┌─────────────────────────────────────────────────────────────────┐
+ * │ 읽는 순서 제안                                                  │
+ * │ 1) GAME_CONFIG  — 승패·시간·쿨다운 숫자                        │
+ * │ 2) constructor  — 학생·요약 객체가 어떻게 붙는지               │
+ * │ 3) tick         — 매 프레임: 시간, 학생 tick, 팝업, 승패 검사   │
+ * │ 4) 플레이어 액션 — remindStudent / cycleNoise / openWindow     │
+ * │ 5) restart      — 새 세션                                     │
+ * └─────────────────────────────────────────────────────────────────┘
+ *
+ * 플레이어(퍼실리테이터)가 건드리는 진입점은 세 가지뿐이다.
+ *   · remindStudent(id) — 학생 클릭 응원 (거리는 p5에서 검사)
+ *   · cycleNoise()      — 음악 M: low(꺼짐) ↔ normal(켜짐) 토글 (호출 전 스피커 근접은 p5)
+ *   · openWindow()      — 창문·환기 (호출 전 위치는 p5)
  */
 
 import { StudentFactory } from './students.js';
 import { SessionSummary } from './summary.js';
 
+// ─────────────────────────────────────────────────────────────
+// 상수 (밸런스 튜닝은 여기만 보면 됨)
+// ─────────────────────────────────────────────────────────────
+
 export const GAME_CONFIG = {
-	TOTAL_SECONDS: 120,
-	WIN_PROGRESS: 80,
+	/** 한 판 제한 시간(초) */
+	TOTAL_SECONDS: 100,
+	/** 이 진행도(%) 이상이면 “완료”로 센다 */
+	WIN_PROGRESS: 100,
+	/** 완료 인원이 이 수 이상이면 승리 */
 	WIN_STUDENT_COUNT: 3,
+	/** 집중 0으로 실패한 학생이 이 수 이상이면 패배 */
 	LOSE_FAIL_COUNT: 3,
+	/** 응원(Remind) 후 다시 쓰기까지 최소 간격(초) */
 	REMIND_COOLDOWN_SEC: 1.75,
-	/** 같은 학생 Remind 시 순서대로 적용되는 보너스 */
+	/** 응원 시 기본 보정값; 같은 학생에게 반복할수록 목록 뒤로 갈수록 작아짐 (실제 적용은 persona가 곱함) */
 	REMIND_FOCUS_BONUSES: [15, 10, 8, 6, 5],
+	/** 같은 학생 Remind: 이 시간(초) 안에 이 횟수 이상이면 짜증(음수). 그 밖은 페르소나 remindDelta 유지 */
+	REMIND_BURST_WINDOW_SEC: 4,
+	REMIND_BURST_MIN_COUNT: 3,
+	/** 창문 연 상태 유지 시간(초) */
 	WINDOW_DURATION_SEC: 5,
 };
 
+/** 화면에 뜨는 짧은 피드백 말풍선 지속 시간(초) — addPopup */
+const POPUP_DURATION_SEC = 1.5;
+
 /** @typedef {'low' | 'normal' | 'high'} NoiseLevel */
 
-const NOISE_ORDER = /** @type {NoiseLevel[]} */ (['low', 'normal', 'high']);
+// ─────────────────────────────────────────────────────────────
+// CafeGame — 한 판의 상태 기계
+// ─────────────────────────────────────────────────────────────
 
 export class CafeGame {
 	constructor() {
-		this.students = StudentFactory.createRoster(5);
+		this.students = StudentFactory.getFactory().createRoster(5);
 		this.summary = new SessionSummary();
+
 		this.remainingSeconds = GAME_CONFIG.TOTAL_SECONDS;
 		/** @type {'playing' | 'won' | 'lost'} */
 		this.phase = 'playing';
-		/** @type {NoiseLevel} */
-		this.noiseLevel = 'normal';
+
+		/** @type {NoiseLevel} low=음악 꺼짐, normal=켜짐(M 토글, HUD ON/OFF) */
+		this.noiseLevel = 'low';
+
+		/** 창문 “열림” 남은 시간(초). 0이면 닫힌 상태 */
 		this.windowSecondsLeft = 0;
-		/** 마지막으로 어떤 개입이든 한 시각(초 단위 게임 경과) — Remind 쿨다운 */
+
+		/** 게임 시작 후 경과 시간(초). Remind 쿨다운 계산에 사용 */
 		this.elapsed = 0;
 		this.lastRemindAt = -999;
-		/** @type {Array<{studentId: number, text: string, color: number[], life: number, maxLife: number}>} */
+
+		/**
+		 * 학생 머리 위 짧은 텍스트 (p5가 그림)
+		 * @type {Array<{ studentId: number, text: string, color: number[], life: number, maxLife: number }>}
+		 */
 		this.popups = [];
+
+		/** 승리 확정 시점까지 경과 시간(초). 미승리면 null */
+		this.winDurationSec = null;
 	}
 
-	/** @param {number} dt 초 */
+	// ─── 시뮬레이션 루프 (매 프레임 1회) ───
+
+	/**
+	 * 시간 감소 → 학생들 tick → 팝업 수명 → 승패 판정
+	 * @param {number} dt 초
+	 */
 	tick(dt) {
 		if (this.phase !== 'playing') return;
 
 		this.elapsed += dt;
 		this.remainingSeconds = Math.max(0, this.remainingSeconds - dt);
+		const wasWindowOpen = this.windowSecondsLeft > 0;
 		if (this.windowSecondsLeft > 0) {
 			this.windowSecondsLeft = Math.max(0, this.windowSecondsLeft - dt);
 		}
-
 		const windowOpen = this.windowSecondsLeft > 0;
+
+		if (wasWindowOpen && !windowOpen) {
+			for (const s of this.students) {
+				const d = s.applyWindowCloseDelta();
+				if (d > 0) {
+					this.addPopup(s.id, `+${d} Closed`, [140, 200, 160]);
+				} else if (d < 0) {
+					this.addPopup(s.id, `${d} Stuffy`, [200, 120, 90]);
+				} else {
+					this.addPopup(s.id, '…', [160, 160, 160]);
+				}
+			}
+		}
 		for (const s of this.students) {
 			s.tick(dt, this.noiseLevel, windowOpen);
 		}
@@ -62,11 +125,17 @@ export class CafeGame {
 		this._resolveEnd();
 	}
 
+	/** 승리 / 패배 조건을 한곳에서만 검사 */
 	_resolveEnd() {
-		const completed = this.students.filter((s) => !s.failed && s.progress >= GAME_CONFIG.WIN_PROGRESS).length;
+		const completed = this.students.filter(
+			(s) => !s.failed && s.progress >= GAME_CONFIG.WIN_PROGRESS
+		).length;
 		const failed = this.students.filter((s) => s.failed).length;
 
 		if (completed >= GAME_CONFIG.WIN_STUDENT_COUNT) {
+			if (this.winDurationSec === null) {
+				this.winDurationSec = this.elapsed;
+			}
 			this.phase = 'won';
 			return;
 		}
@@ -79,7 +148,11 @@ export class CafeGame {
 		}
 	}
 
+	// ─── 플레이어 액션 (UI/p5에서만 호출) ───
+
 	/**
+	 * [액션 1] 학생에게 응원(Remind)
+	 * - 집중 변화는 페르소나 remindDelta; 같은 학생에게 4초 안에 3번 연속 Remind면 음수(짜증)
 	 * @param {number} studentId
 	 * @returns {{ ok: boolean, reason?: string }}
 	 */
@@ -88,70 +161,122 @@ export class CafeGame {
 		if (this.elapsed - this.lastRemindAt < GAME_CONFIG.REMIND_COOLDOWN_SEC) {
 			return { ok: false, reason: '쿨다운' };
 		}
+
 		const student = this.students.find((s) => s.id === studentId);
 		if (!student || student.failed) return { ok: false, reason: '대상 없음' };
 
 		const idx = Math.min(student.remindCount, GAME_CONFIG.REMIND_FOCUS_BONUSES.length - 1);
 		const baseBonus = GAME_CONFIG.REMIND_FOCUS_BONUSES[idx];
-		const actualDelta = student.applyRemindFocusDelta(baseBonus);
+		const actualDelta = student.applyRemindFocusDelta(baseBonus, this.elapsed, {
+			windowSec: GAME_CONFIG.REMIND_BURST_WINDOW_SEC,
+			minCount: GAME_CONFIG.REMIND_BURST_MIN_COUNT,
+		});
+
 		this.lastRemindAt = this.elapsed;
 		this.summary.recordRemind();
+
 		if (actualDelta > 0) {
 			this.addPopup(studentId, `+${actualDelta} Focus`, [100, 200, 100]);
 		} else if (actualDelta < 0) {
 			this.addPopup(studentId, `${actualDelta} Annoyed!`, [220, 80, 80]);
+		} else {
+			this.addPopup(studentId, '…', [160, 160, 160]);
 		}
 		return { ok: true };
 	}
 
-	addPopup(studentId, text, colorRgb) {
-		this.popups.push({
-			studentId,
-			text,
-			color: colorRgb,
-			life: 1.5,
-			maxLife: 1.5
-		});
-	}
-
+	/**
+	 * [액션 2] 음악(M): 직전 상태 기준 토글 — 켜져 있으면 OFF, 꺼져 있으면 ON
+	 * - tick 배율 외에, 바꾼 순간 페르소나별 즉시 집중 변화(louder / quieter 펄스)
+	 */
 	cycleNoise() {
 		if (this.phase !== 'playing') return;
-		const i = NOISE_ORDER.indexOf(this.noiseLevel);
-		this.noiseLevel = NOISE_ORDER[(i + 1) % NOISE_ORDER.length];
+
+		const wasOn = this.isMusicOn();
+		let loudening = false;
+		let quietening = false;
+
+		if (wasOn) {
+			this.noiseLevel = 'low';
+			quietening = true;
+		} else {
+			this.noiseLevel = 'normal';
+			loudening = true;
+		}
+
 		this.summary.recordNoiseChange();
 
 		for (const s of this.students) {
-			if (this.noiseLevel === 'high') {
-				if (s.kind === 'fast') this.addPopup(s.id, 'Speed UP!', [180, 100, 200]);
-				else if (s.kind === 'sensitive') this.addPopup(s.id, 'Stress!!', [220, 80, 80]);
-				else this.addPopup(s.id, 'Noisy', [200, 200, 200]);
-			} else if (this.noiseLevel === 'low') {
-				this.addPopup(s.id, 'Quiet...', [150, 150, 200]);
-			} else {
-				this.addPopup(s.id, 'Normal', [200, 200, 200]);
+			let d = 0;
+			if (loudening) {
+				d = s.applyNoiseEnvironmentPulse('louder');
+				if (d > 0) {
+					this.addPopup(s.id, `+${d} Beat`, [120, 180, 220]);
+				} else if (d < 0) {
+					this.addPopup(s.id, `${d} Ugh`, [220, 90, 90]);
+				} else {
+					this.addPopup(s.id, '~', [150, 150, 150]);
+				}
+			} else if (quietening) {
+				d = s.applyNoiseEnvironmentPulse('quieter');
+				if (d > 0) {
+					// 예전에 소음에 Ugh였던 쪽 — 조용해지면 집중 회복
+					this.addPopup(s.id, `+${d} Can focus!`, [100, 200, 130]);
+				} else if (d < 0) {
+					this.addPopup(s.id, `${d} Too quiet`, [200, 110, 100]);
+				} else {
+					this.addPopup(s.id, '~', [150, 150, 150]);
+				}
 			}
 		}
 	}
 
+	/**
+	 * [액션 3] 창문 열기 (환기)
+	 * - 이미 열려 있으면 무시
+	 * - 열 때 applyWindowOpenDelta, 닫힐 때 tick 안 applyWindowCloseDelta 로 즉시 집중 변화
+	 */
 	openWindow() {
 		if (this.phase !== 'playing') return;
 		if (this.windowSecondsLeft > 0) return;
 
 		for (const s of this.students) {
-			const delta = s.applyWindowBoost();
+			const delta = s.applyWindowOpenDelta();
 			if (delta > 0) {
 				this.addPopup(s.id, `+${delta} Fresh`, [100, 180, 220]);
 			} else if (delta < 0) {
 				this.addPopup(s.id, `${delta} Cold!`, [100, 150, 250]);
+			} else {
+				this.addPopup(s.id, 'Air ok', [170, 170, 170]);
 			}
 		}
+
 		this.windowSecondsLeft = GAME_CONFIG.WINDOW_DURATION_SEC;
 		this.summary.recordWindow();
 	}
 
-	getNoiseLabel() {
-		const map = { low: '조용함', normal: '보통', high: '시끄움' };
-		return map[this.noiseLevel];
+	// ─── 피드백 (액션에서만 채움, tick에서 수명 감소) ───
+
+	/**
+	 * @param {number} studentId
+	 * @param {string} text
+	 * @param {[number, number, number]} colorRgb
+	 */
+	addPopup(studentId, text, colorRgb) {
+		this.popups.push({
+			studentId,
+			text,
+			color: colorRgb,
+			life: POPUP_DURATION_SEC,
+			maxLife: POPUP_DURATION_SEC,
+		});
+	}
+
+	// ─── 조회 (HUD·종료 화면) ───
+
+	/** HUD용: 음악이 켜져 있으면 true (M 토글 시 normal; low만 꺼짐) */
+	isMusicOn() {
+		return this.noiseLevel !== 'low';
 	}
 
 	getCompletedCount() {
@@ -162,15 +287,18 @@ export class CafeGame {
 		return this.students.filter((s) => s.failed).length;
 	}
 
+	// ─── 재시작 ───
+
 	restart() {
-		this.students = StudentFactory.createRoster(5);
+		this.students = StudentFactory.getFactory().createRoster(5);
 		this.summary = new SessionSummary();
 		this.remainingSeconds = GAME_CONFIG.TOTAL_SECONDS;
 		this.phase = 'playing';
-		this.noiseLevel = 'normal';
+		this.noiseLevel = 'low';
 		this.windowSecondsLeft = 0;
 		this.elapsed = 0;
 		this.lastRemindAt = -999;
 		this.popups = [];
+		this.winDurationSec = null;
 	}
 }

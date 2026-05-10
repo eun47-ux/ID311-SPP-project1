@@ -3,17 +3,11 @@
  */
 
 import { PALETTE, TILE, snap } from './palette.js';
+import { STUDENT_TILES } from '../lib/students.js';
+import { GAME_CONFIG } from '../lib/cafeGame.js';
 
 export const HEAD = TILE * 2; // 32
-
-/** 타일 좌표 [gx, gy] — 4개의 중앙 테이블 주위 의자 위치 (5명) */
-export const STUDENT_TILES = [
-	[6, 6],   // Table 1 Top
-	[6, 10],  // Table 1 Bottom
-	[13, 8],  // Table 2 Left
-	[8, 15],  // Table 3 Right
-	[15, 17], // Table 4 Bottom
-];
+export { STUDENT_TILES };
 
 /** @typedef {import('../lib/students.js').Student} Student */
 
@@ -70,19 +64,63 @@ export function drawStudentAvatar(p, s, px, py) {
 
 	// 눈
 	p.fill(...PALETTE.outline);
-	p.rect(x + 8, y + 14, 4, 4); // 왼쪽 눈
-	p.rect(x + HEAD - 12, y + 14, 4, 4); // 오른쪽 눈
+	p.rect(x + 8, y + 14, 4, 4);
+	p.rect(x + HEAD - 12, y + 14, 4, 4);
 
-	// 직관적인 상태 말풍선(픽셀 도형)
-	drawMoodBubble(p, s, x, y);
+	const reached100 = !s.failed && s.progress >= GAME_CONFIG.WIN_PROGRESS;
 
-	// 청크 바 (진척도만 남김)
-	const bw = HEAD;
-	const bh = 5;
-	const bx = x;
-	const by = y + HEAD + 4;
-	drawChunkBar(p, bx, by, bw, bh, s.progress / 100, PALETTE.barProg);
+	// 상태 말풍선: 100% 완료 시 트로피(픽셀), 그 외 집중 기반 아이콘
+	drawMoodBubble(p, s, x, y, reached100);
+
+	// 완료 학생은 하단 게이지 숨김 — 캐릭터만 한눈에
+	if (!reached100) {
+		const bw = HEAD;
+		const bh = 4;
+		const bx = x;
+		let by = y + HEAD + 2;
+		drawChunkBar(p, bx, by, bw, bh, s.focus / 100, PALETTE.barFocus);
+		by += bh + 3;
+		drawChunkBar(p, bx, by, bw, bh, s.progress / 100, PALETTE.barProg);
+	}
+
 	p.pop();
+}
+
+/**
+ * 말풍선 안 픽셀 트로피 (16x16 영역, 중심 cx, cy)
+ * @param {import('p5')} p
+ * @param {number} cx
+ * @param {number} cy
+ */
+function drawTrophyPixels(p, cx, cy) {
+	const u = 2;
+	const ox = Math.round(cx - 4 * u);
+	const oy = Math.round(cy - 4 * u);
+	const gold = [238, 200, 55];
+	const goldHi = [255, 230, 120];
+	const shadow = [160, 110, 25];
+
+	p.noStroke();
+	// 받침대
+	p.fill(...shadow);
+	p.rect(ox + u, oy + 6 * u, 6 * u, u);
+	p.fill(...gold);
+	p.rect(ox + 2 * u, oy + 5 * u, 4 * u, u);
+	// 기둥
+	p.fill(...shadow);
+	p.rect(ox + 3 * u, oy + 3 * u, 2 * u, 2 * u);
+	// 컵 몸통
+	p.fill(...gold);
+	p.rect(ox + u, oy + 1 * u, 6 * u, 2 * u);
+	p.fill(...goldHi);
+	p.rect(ox + 2 * u, oy + u, 4 * u, u);
+	// 손잡이
+	p.fill(...gold);
+	p.rect(ox, oy + 1 * u, u, 2 * u);
+	p.rect(ox + 7 * u, oy + 1 * u, u, 2 * u);
+	// 림
+	p.fill(...shadow);
+	p.rect(ox, oy, 8 * u, u);
 }
 
 /**
@@ -91,37 +129,43 @@ export function drawStudentAvatar(p, s, px, py) {
  * @param {Student} s
  * @param {number} x
  * @param {number} y
+ * @param {boolean} reached100
  */
-function drawMoodBubble(p, s, x, y) {
+function drawMoodBubble(p, s, x, y, reached100) {
 	if (s.failed) return; // 실패 시 ZZ가 이미 그려짐
 
 	const cx = x + HEAD / 2;
 	const cy = y - 8;
 
 	p.push();
-	// 말풍선 하얀 배경
 	p.fill(250, 248, 240);
 	p.stroke(...PALETTE.outline);
 	p.strokeWeight(1);
 	p.rectMode(p.CENTER);
 	p.rect(cx, cy, 16, 16);
-	
+
 	p.noStroke();
+
+	if (reached100) {
+		p.rectMode(p.CORNER);
+		drawTrophyPixels(p, cx, cy);
+		p.pop();
+		return;
+	}
+
+	p.rectMode(p.CENTER);
 	if (s.focus > 70) {
-		// 초록색 하트 모양 느낌
 		p.fill(100, 180, 100);
 		p.rect(cx - 2, cy - 2, 4, 4);
 		p.rect(cx + 2, cy - 2, 4, 4);
 		p.rect(cx, cy, 4, 4);
 		p.rect(cx, cy + 2, 2, 2);
 	} else if (s.focus > 30) {
-		// 노란색 말줄임표
 		p.fill(220, 150, 40);
 		p.rect(cx - 3, cy, 2, 2);
 		p.rect(cx, cy, 2, 2);
 		p.rect(cx + 3, cy, 2, 2);
 	} else {
-		// 빨간색 느낌표
 		p.fill(220, 80, 80);
 		p.rect(cx, cy - 2, 2, 6);
 		p.rect(cx, cy + 4, 2, 2);
@@ -161,11 +205,14 @@ export function drawPlayerAvatar(p, px, py) {
 	p.rect(x + 8, y + 14, 4, 4); 
 	p.rect(x + HEAD - 12, y + 14, 4, 4); 
 
-	// 플레이어 식별 마커 (머리 위 작은 화살표나 P 표시)
-	p.fill(200, 220, 100);
+	// 플레이어 식별 마커 (머리 위 ▼) — 색은 PALETTE.playerMarker
+	p.fill(...PALETTE.playerMarker);
 	p.textAlign(p.CENTER, p.BOTTOM);
 	p.textSize(10);
+	p.stroke(...PALETTE.outline);
+	p.strokeWeight(2);
 	p.text('▼', x + HEAD / 2, y + 2);
+	p.noStroke();
 
 	p.pop();
 }

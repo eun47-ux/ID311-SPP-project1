@@ -3,11 +3,12 @@
  */
 
 import p5 from 'p5';
-import { CafeGame } from '../lib/cafeGame.js';
+import { CafeGame, GAME_CONFIG } from '../lib/cafeGame.js';
 import { drawWorld } from './cafeWorldDraw.js';
 import { drawHudBar, drawHudText } from './cafeHudDraw.js';
 import { COLS, ROWS, TILE, PALETTE } from './palette.js';
-import { drawStudentAvatar, drawPlayerAvatar, hitStudent, HEAD, slotToPixel, STUDENT_TILES } from './studentDraw.js';
+import { STUDENT_TILES } from '../lib/students.js';
+import { drawStudentAvatar, drawPlayerAvatar, hitStudent, HEAD, slotToPixel } from './studentDraw.js';
 
 const HUD_H = TILE * 2;
 const W = COLS * TILE;
@@ -21,6 +22,51 @@ const INTERACT_RADIUS = TILE * 3.5;
 
 function dist(x1, y1, x2, y2) {
 	return Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2));
+}
+
+/** HUD 아래 플레이 영역 기준 포인터 (오버레이·버튼 히트 테스트) */
+function worldPointer(p) {
+	return { mx: p.mouseX, my: p.mouseY - HUD_H };
+}
+
+const MENU_BTN_W = 112;
+const MENU_BTN_H = 26;
+
+/**
+ * 버튼 뒤 검정 반투명 패드 (라벨보다 먼저 그림)
+ * @param {import('p5')} p
+ * @param {number} cx
+ * @param {number} cy
+ */
+function drawMenuButtonBackdrop(p, cx, cy) {
+	const padX = 14;
+	const padY = 10;
+	const bw = MENU_BTN_W + padX * 2;
+	const bh = MENU_BTN_H + padY * 2;
+	p.noStroke();
+	p.fill(0, 0, 0, 165);
+	p.rect(cx - bw / 2, cy - bh / 2, bw, bh);
+}
+
+/** @param {import('p5')} p */
+function drawMenuButton(p, cx, cy, label) {
+	const x0 = cx - MENU_BTN_W / 2;
+	const y0 = cy - MENU_BTN_H / 2;
+	p.stroke(...PALETTE.outline);
+	p.strokeWeight(2);
+	p.fill(36, 44, 38);
+	p.rect(x0, y0, MENU_BTN_W, MENU_BTN_H);
+	p.noStroke();
+	p.fill(...PALETTE.hudText);
+	p.textAlign(p.CENTER, p.CENTER);
+	p.textSize(8);
+	p.text(label, cx, cy);
+}
+
+function hitMenuButton(mx, my, cx, cy) {
+	const x0 = cx - MENU_BTN_W / 2;
+	const y0 = cy - MENU_BTN_H / 2;
+	return mx >= x0 && mx <= x0 + MENU_BTN_W && my >= y0 && my <= y0 + MENU_BTN_H;
 }
 
 /**
@@ -77,17 +123,19 @@ export function mountP5Game(host) {
 				if (game.phase === 'playing') {
 					game.tick(dt);
 					
-					// 음표 파티클 로직 (High 노이즈일 때 스피커에서 발생)
-					if (game.noiseLevel === 'high') {
-						if (Math.random() < 0.1) {
+					// 음표 파티클: MUSIC ON 일 때만 (M 토글로 normal)
+					if (game.isMusicOn()) {
+						if (Math.random() < 0.08) {
 							musicalNotes.push({
-								x: TILE * 2 + (Math.random() * TILE),
+								x: TILE * 2 + Math.random() * TILE,
 								y: (ROWS - 4) * TILE,
 								life: 2.0,
 								maxLife: 2.0,
-								char: Math.random() > 0.5 ? '🎵' : '♪'
+								char: Math.random() > 0.5 ? '🎵' : '♪',
 							});
 						}
+					} else {
+						musicalNotes.length = 0;
 					}
 					for (let i = musicalNotes.length - 1; i >= 0; i--) {
 						musicalNotes[i].life -= dt;
@@ -139,6 +187,8 @@ export function mountP5Game(host) {
 					endMessage = game.summary.getReflectionMessage({
 						completed: game.getCompletedCount(),
 						total: game.students.length,
+						goalStudentCount: GAME_CONFIG.WIN_STUDENT_COUNT,
+						winSec: game.phase === 'won' ? game.winDurationSec : null,
 					});
 					uiScreen = 'end';
 				}
@@ -158,7 +208,8 @@ export function mountP5Game(host) {
 			const isWindowOpen = game && game.windowSecondsLeft > 0;
 			drawWorld(p, isWindowOpen);
 
-			if (uiScreen === 'play' || uiScreen === 'end') {
+			// 엔드 화면에서는 캐릭터·팝업·음표를 그리지 않아 오버레이·버튼이 가려지지 않게 함
+			if (uiScreen === 'play') {
 				game?.students.forEach((s, i) => {
 					const [gx, gy] = STUDENT_TILES[i] ?? [5, 12];
 					const { x, y } = slotToPixel(gx, gy);
@@ -166,23 +217,19 @@ export function mountP5Game(host) {
 				});
 				drawPlayerAvatar(p, playerX, playerY);
 
-				// 팝업 애니메이션 렌더링
 				game?.popups.forEach((popup) => {
-					const studentIndex = game.students.findIndex(s => s.id === popup.studentId);
+					const studentIndex = game.students.findIndex((s) => s.id === popup.studentId);
 					if (studentIndex !== -1) {
 						const [gx, gy] = STUDENT_TILES[studentIndex] ?? [5, 12];
 						const { x, y } = slotToPixel(gx, gy);
-						
-						// 위로 떠오르는 애니메이션 (progress: 0 -> 1)
-						const progress = 1 - (popup.life / popup.maxLife);
-						const offsetY = -24 - (progress * 30);
-						// 마지막 0.5초 동안 서서히 투명해짐
+
+						const progress = 1 - popup.life / popup.maxLife;
+						const offsetY = -24 - progress * 30;
 						const alpha = Math.min(255, (popup.life / 0.5) * 255);
-						
+
 						p.push();
 						p.textAlign(p.CENTER, p.BOTTOM);
 						p.textSize(10);
-						// 가독성을 위한 하얀색 외곽선
 						p.stroke(255, 255, 255, alpha);
 						p.strokeWeight(2);
 						p.fill(popup.color[0], popup.color[1], popup.color[2], alpha);
@@ -191,8 +238,7 @@ export function mountP5Game(host) {
 					}
 				});
 
-				// 음표 애니메이션 렌더링
-				musicalNotes.forEach(note => {
+				musicalNotes.forEach((note) => {
 					p.push();
 					p.textAlign(p.CENTER, p.BOTTOM);
 					p.textSize(12);
@@ -212,9 +258,9 @@ export function mountP5Game(host) {
 
 			if (feedback && p.millis() < feedbackUntil) {
 				p.resetMatrix();
-				p.fill(255, 220, 180);
 				p.textAlign(p.CENTER, p.BOTTOM);
 				p.textSize(9);
+				p.fill(...PALETTE.feedbackHint);
 				p.text(feedback, W / 2, H - 8);
 			}
 		};
@@ -226,17 +272,14 @@ export function mountP5Game(host) {
 			p.textAlign(p.CENTER, p.CENTER);
 			p.textSize(14);
 			p.text('CAFE FOCUS', W / 2, ROWS * TILE * 0.38);
-			p.textSize(8);
-			p.fill(...PALETTE.hudText);
-			p.text('facilitator prototype', W / 2, ROWS * TILE * 0.48);
-			p.textSize(7);
-			p.text('Click to Start', W / 2, ROWS * TILE * 0.62);
-			p.text('W: Window | M: Noise | Click: Remind', W / 2, ROWS * TILE * 0.72);
+			const startCy = ROWS * TILE * 0.66;
+			drawMenuButtonBackdrop(p, W / 2, startCy);
+			drawMenuButton(p, W / 2, startCy, 'START');
 		}
 
 		/** @param {import('../lib/cafeGame.js').CafeGame} g */
 		function drawEndOverlay(p, g) {
-			p.fill(18, 22, 18, 230);
+			p.fill(18, 22, 18, 248);
 			p.rect(0, 0, W, ROWS * TILE);
 			p.fill(...PALETTE.hudText);
 			p.textAlign(p.CENTER, p.TOP);
@@ -246,11 +289,13 @@ export function mountP5Game(host) {
 			p.textSize(7);
 			const st = [
 				`Completed ${g.getCompletedCount()} / ${g.students.length}`,
-				`Remind ${g.summary.directRemindCount}  Noise ${g.summary.noiseChangeCount}  Window ${g.summary.windowOpenCount}`,
+				`Remind ${g.summary.directRemindCount}  Music ${g.summary.noiseChangeCount}  Window ${g.summary.windowOpenCount}`,
 				endMessage,
-				'Click / Key = Title',
 			].join('\n');
-			p.text(st, W / 2, ROWS * TILE * 0.38);
+			p.text(st, W / 2, ROWS * TILE * 0.36);
+			const restartCy = ROWS * TILE * 0.78;
+			drawMenuButtonBackdrop(p, W / 2, restartCy);
+			drawMenuButton(p, W / 2, restartCy, 'RESTART');
 		}
 
 		function startFromTitle() {
@@ -262,19 +307,19 @@ export function mountP5Game(host) {
 			musicalNotes = [];
 		}
 
-		function backToTitle() {
-			uiScreen = 'title';
-			game = null;
-			feedback = '';
-		}
-
 		p.mousePressed = () => {
 			if (uiScreen === 'title') {
-				startFromTitle();
+				const { mx, my } = worldPointer(p);
+				if (hitMenuButton(mx, my, W / 2, ROWS * TILE * 0.66)) {
+					startFromTitle();
+				}
 				return;
 			}
 			if (uiScreen === 'end') {
-				backToTitle();
+				const { mx, my } = worldPointer(p);
+				if (hitMenuButton(mx, my, W / 2, ROWS * TILE * 0.78)) {
+					startFromTitle();
+				}
 				return;
 			}
 			if (!game || game.phase !== 'playing') return;
@@ -296,7 +341,8 @@ export function mountP5Game(host) {
 					}
 
 					const r = game.remindStudent(s.id);
-					if (!r.ok && r.reason) {
+
+					if (!r.ok && r.reason && r.reason !== '쿨다운') {
 						feedback = r.reason;
 						feedbackUntil = p.millis() + 900;
 					}
@@ -306,14 +352,7 @@ export function mountP5Game(host) {
 		};
 
 		p.keyPressed = () => {
-			if (uiScreen === 'title') {
-				startFromTitle();
-				return;
-			}
-			if (uiScreen === 'end') {
-				backToTitle();
-				return;
-			}
+			if (uiScreen === 'title' || uiScreen === 'end') return;
 			if (!game || game.phase !== 'playing') return;
 			const k = p.key;
 
@@ -321,7 +360,7 @@ export function mountP5Game(host) {
 				const speakerX = TILE * 2;
 				const speakerY = (ROWS - 4) * TILE + TILE * 1.5;
 				if (dist(playerX + HEAD/2, playerY + HEAD/2, speakerX, speakerY) > INTERACT_RADIUS + TILE) {
-					feedback = "Get closer to speaker!";
+					feedback = 'Get closer to music!';
 					feedbackUntil = p.millis() + 1000;
 					return;
 				}

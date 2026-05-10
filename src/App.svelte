@@ -19,7 +19,7 @@
 </script>
 
 <main class="wrap">
-	<p class="note">전체 화면은 p5 캔버스입니다. 타이틀에서 클릭 또는 키로 시작하세요.</p>
+	<p class="note">Full screen is the p5 canvas. Use START / RESTART on the canvas.</p>
 	<div class="canvas-host" bind:this={host} />
 </main>
 
