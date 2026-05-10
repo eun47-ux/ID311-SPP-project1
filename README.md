@@ -18,7 +18,7 @@ https://youtu.be/z8CvN1aGxNo
 
 
 ## 4. Game Description
-<img src="references/hero.png" alt="hero" width="400" />
+<img src="references/hero.png" alt="hero" width="700" />
 Cafe Focus Manager is a simulation game where the player acts as a cafe facilitator (manager).  
 Instead of directly controlling students, the player manages the cafe environment and gives small interventions to help students maintain focus and complete their study goals.
 
